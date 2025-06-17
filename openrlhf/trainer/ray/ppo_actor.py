@@ -26,7 +26,7 @@ from ..ppo_utils import NaiveReplayBuffer
 
 logger = init_logger(__name__)
 
-from .launcher import BasePPORole
+from .launcher import BaseModelActor
 from .utils import get_physical_gpu_id
 
 
@@ -215,16 +215,17 @@ class ActorPPOTrainer(ABC):
             return_output=True,
             ring_attn_group=self.strategy.ring_attn_group,
             packed_seq_lens=packed_seq_lens,
-            return_entropy=self.args.entropy_loss_coef > 1e-8,
+            return_entropy=self.args.entropy_loss_coef is not None,
         )
 
         # loss function
-        actor_loss = self.actor_loss_fn(
+        actor_loss, clip_ratio = self.actor_loss_fn(
             action_log_probs,
             old_action_log_probs,
             advantages,
             action_mask=experience.action_mask,
         )
+        experience.info["ppo_clip_ratio"] = clip_ratio.detach()
 
         if self.args.use_kl_loss:
             if self.args.init_kl_coef > 0:
@@ -245,9 +246,10 @@ class ActorPPOTrainer(ABC):
         if self.aux_loss:
             loss += output.aux_loss * self.args.aux_loss_coef
         # entropy loss
-        if self.args.entropy_loss_coef > 1e-8:
+        if self.args.entropy_loss_coef is not None:
             entropy_loss = masked_mean(output.entropy[:, -experience.action_mask.shape[1] :], experience.action_mask)
-            loss -= entropy_loss * self.args.entropy_loss_coef
+            if self.args.entropy_loss_coef != 0:
+                loss -= entropy_loss * self.args.entropy_loss_coef
 
         self.strategy.backward(loss, self.actor, self.actor_optim)
         self.strategy.optimizer_step(self.actor_optim, self.actor, self.actor_scheduler, name="actor")
@@ -256,10 +258,15 @@ class ActorPPOTrainer(ABC):
 
         # status
         status = {"policy_loss": actor_loss.detach().item(), "actor_lr": self.actor_scheduler.get_last_lr()[0]}
-        if self.args.entropy_loss_coef > 1e-8:
+        if self.args.entropy_loss_coef is not None:
             status["entropy_loss"] = entropy_loss.detach().item()
+
+        # merge logs from info field
         for k, v in experience.info.items():
-            status[k] = v.mean().item()
+            if isinstance(v, list):
+                status[k] = torch.tensor(v, dtype=torch.float).mean().item()
+            elif isinstance(v, torch.Tensor):
+                status[k] = v.float().mean().item()
         return status
 
     def _broadcast_to_vllm(self):
@@ -349,8 +356,8 @@ class ActorPPOTrainer(ABC):
 
 
 @ray.remote(num_gpus=1)
-class ActorModelRayActor(BasePPORole):
-    def init_model_from_pretrained(self, strategy: DeepspeedStrategy, pretrain, max_steps, vllm_engines):
+class PolicyModelActor(BaseModelActor):
+    def init_model_from_pretrained(self, strategy: DeepspeedStrategy, pretrain, max_steps=None, vllm_engines=None):
         args = strategy.args
         self.save_hf_ckpt = args.save_hf_ckpt
         self.disable_ds_ckpt = args.disable_ds_ckpt
@@ -404,7 +411,7 @@ class ActorModelRayActor(BasePPORole):
         )
 
         actor_scheduler = get_scheduler(
-            "cosine_with_min_lr",
+            args.lr_scheduler,
             actor_optim,
             num_warmup_steps=math.ceil(max_steps * args.lr_warmup_ratio),
             num_training_steps=max_steps,

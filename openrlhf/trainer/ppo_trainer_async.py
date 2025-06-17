@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 
 import ray
 from tqdm import tqdm
@@ -7,7 +8,7 @@ from tqdm import tqdm
 from openrlhf.trainer.ppo_trainer import BasePPOTrainer
 from openrlhf.trainer.ppo_utils import AdaptiveKLController, FixedKLController
 from openrlhf.trainer.ppo_utils.experience_maker import RemoteExperienceMaker
-from openrlhf.trainer.ray.launcher import PPORayActorGroup
+from openrlhf.trainer.ray.launcher import RayActorGroup
 from openrlhf.utils.deepspeed import DeepspeedStrategy
 from openrlhf.utils.logging_utils import init_logger
 
@@ -83,7 +84,16 @@ class GenerateSamplesActor(BasePPOTrainer):
 
             filtered_samples = []
             number_of_samples = 0
+            queue_log_counter = 0  # Counter for log interval
             for _, rand_prompts, labels in self.prompts_dataloader:
+                # Wait until queue is not full
+                # To support 1-step off-policy training
+                while queue.full():
+                    if queue_log_counter % 10 == 0:  # Print log every 10 seconds
+                        logger.info("Queue is full, waiting for training to consume samples...")
+                    queue_log_counter += 1
+                    time.sleep(1)  # Wait for 1 second before checking again
+
                 # Wait for generation to be allowed
                 ray.get(self.signal_actor.wait_generating.remote())
                 # Block weight updates
@@ -111,7 +121,7 @@ class GenerateSamplesActor(BasePPOTrainer):
                             continue
 
                         # Calculate average reward for this batch of samples
-                        avg_reward = sum(sample.rewards[0] for sample in batch_samples) / len(batch_samples)
+                        avg_reward = sum(sample.scores[0].item() for sample in batch_samples) / len(batch_samples)
 
                         # Check if average reward is within the specified range
                         min_reward, max_reward = self.args.dynamic_filtering_reward_range
@@ -228,10 +238,10 @@ class PPOTrainerAsync:
         self,
         pretrain: str,
         strategy: DeepspeedStrategy,
-        actor_model_group: PPORayActorGroup,
-        critic_model_group: PPORayActorGroup,
-        reward_model_group: PPORayActorGroup,
-        reference_model_group: PPORayActorGroup,
+        actor_model_group: RayActorGroup,
+        critic_model_group: RayActorGroup,
+        reward_model_group: RayActorGroup,
+        reference_model_group: RayActorGroup,
         vllm_engines=None,
         prompt_max_len: int = 120,
         dataloader_pin_memory: bool = True,

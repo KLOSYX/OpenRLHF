@@ -11,10 +11,10 @@ from openrlhf.datasets import PromptDataset
 from openrlhf.datasets.utils import blending_datasets
 from openrlhf.trainer.ppo_utils import AdaptiveKLController, FixedKLController
 from openrlhf.trainer.ppo_utils.experience_maker import RemoteExperienceMaker
-from openrlhf.trainer.ray.launcher import PPORayActorGroup
-from openrlhf.utils import get_tokenizer
+from openrlhf.trainer.ray.launcher import RayActorGroup
 from openrlhf.utils.deepspeed import DeepspeedStrategy
 from openrlhf.utils.logging_utils import init_logger
+from openrlhf.utils.utils import get_tokenizer
 
 logger = init_logger(__name__)
 
@@ -24,10 +24,10 @@ class BasePPOTrainer(ABC):
         self,
         pretrain: str,
         strategy: DeepspeedStrategy,
-        actor_model_group: PPORayActorGroup,
-        critic_model_group: PPORayActorGroup,
-        reward_model_group: PPORayActorGroup,
-        reference_model_group: PPORayActorGroup,
+        actor_model_group: RayActorGroup,
+        critic_model_group: RayActorGroup,
+        reward_model_group: RayActorGroup,
+        reference_model_group: RayActorGroup,
         vllm_engines=None,
         prompt_max_len: int = 120,
         dataloader_pin_memory: bool = True,
@@ -367,10 +367,10 @@ class PPOTrainer(BasePPOTrainer):
         self,
         pretrain: str,
         strategy: DeepspeedStrategy,
-        actor_model_group: PPORayActorGroup,
-        critic_model_group: PPORayActorGroup,
-        reward_model_group: PPORayActorGroup,
-        reference_model_group: PPORayActorGroup,
+        actor_model_group: RayActorGroup,
+        critic_model_group: RayActorGroup,
+        reward_model_group: RayActorGroup,
+        reference_model_group: RayActorGroup,
         vllm_engines=None,
         prompt_max_len: int = 120,
         dataloader_pin_memory: bool = True,
@@ -480,7 +480,7 @@ class PPOTrainer(BasePPOTrainer):
                             continue
 
                         # Calculate average reward for this batch of samples
-                        avg_reward = sum(sample.rewards[0] for sample in batch_samples) / len(batch_samples)
+                        avg_reward = sum(sample.scores[0].item() for sample in batch_samples) / len(batch_samples)
 
                         # Check if average reward is within the specified range
                         min_reward, max_reward = self.args.dynamic_filtering_reward_range
