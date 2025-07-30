@@ -13,7 +13,7 @@ def blending_datasets(
     strategy=None,
     seed=42,
     max_count=1e8,
-    stopping_strategy="all_exhausted",
+    stopping_strategy="first_exhausted",
     dataset_split="train",
 ):
     """Blend multiple datasets with optional probability sampling.

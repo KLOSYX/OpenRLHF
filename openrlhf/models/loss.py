@@ -55,19 +55,46 @@ class GPTLMLoss(nn.Module):
 
 class SFTLoss(nn.Module):
     """
-    SFT Loss
+    SFT Loss with optional Focal Loss support
     """
 
-    def __init__(self, token_level_loss: bool = True):
+    def __init__(
+        self,
+        token_level_loss: bool = True,
+        use_focal_loss: bool = False,
+        focal_alpha: float = 1.0,
+        focal_gamma: float = 2.0,
+    ):
         super().__init__()
         self.token_level_loss = token_level_loss
+        self.use_focal_loss = use_focal_loss
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
 
     def forward(self, per_token_logps: torch.Tensor, loss_mask: torch.Tensor) -> torch.Tensor:
-        loss = (
-            masked_mean(-per_token_logps, loss_mask, dim=None)
-            if self.token_level_loss
-            else masked_mean(-per_token_logps, loss_mask, dim=-1).mean()
-        )
+        if self.use_focal_loss:
+            # Convert log probabilities to probabilities
+            per_token_probs = torch.exp(per_token_logps)
+
+            # Focal Loss: FL(pt) = -α(1-pt)^γ log(pt)
+            # Here pt is the probability of the correct token (which is 1 for SFT)
+            focal_weight = self.focal_alpha * (1 - per_token_probs) ** self.focal_gamma
+
+            # Apply focal weight to the negative log likelihood
+            focal_loss = -focal_weight * per_token_logps
+
+            loss = (
+                masked_mean(focal_loss, loss_mask, dim=None)
+                if self.token_level_loss
+                else masked_mean(focal_loss, loss_mask, dim=-1).mean()
+            )
+        else:
+            # Original SFT loss
+            loss = (
+                masked_mean(-per_token_logps, loss_mask, dim=None)
+                if self.token_level_loss
+                else masked_mean(-per_token_logps, loss_mask, dim=-1).mean()
+            )
 
         return loss
 
