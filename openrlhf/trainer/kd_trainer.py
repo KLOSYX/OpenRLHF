@@ -233,6 +233,8 @@ class KDTrainer(ABC):
                 attention_mask = attention_masks.squeeze(1).to(torch.cuda.current_device())
                 logits = self.model(inputs, attention_mask=attention_mask, return_output=True)["logits"]
                 prompts_id_len = (loss_masks != 0).int().argmax(dim=-1).squeeze(-1)
+                if prompts_id_len.dim() == 0:
+                    prompts_id_len = prompts_id_len.unsqueeze(0)
 
                 labels = torch.where(
                     attention_mask.bool(),
