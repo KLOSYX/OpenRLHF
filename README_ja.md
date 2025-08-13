@@ -42,6 +42,7 @@ OpenRLHFは、Ray、vLLM、ZeRO-3、およびHuggingFace Transformersを基盤�
 詳細は[スライド](https://docs.google.com/presentation/d/1JRhB1d7csofx0PIZBmfyBdMluxNd5JLPpUHrrvVhGnk/edit?usp=sharing) | [技術報告](https://arxiv.org/abs/2405.11143) | [ドキュメント](https://openrlhf.readthedocs.io/)をご覧ください。
 
 ## ニュース
+- [2025/8] [ProRL V2](https://hijkzzz.notion.site/prorl-v2) は REINFORCE++-baseline を使用して最先端の 1.5B 推論モデルを訓練しています。
 - [2025/6] [Magistral](https://mistral.ai/static/research/magistral.pdf) は REINFORCE++-baseline を使用して推論モデルを訓練しています。
 - [2025/5] [MARTI](https://github.com/TsinghuaC3I/MARTI) が OpenRLHF のフォークとしてリリースされました。集中型マルチエージェント相互作用と分散型ポリシー訓練を統合し、RL を使用した LLM ベースのマルチエージェントシステムの訓練を目的として設計されています。
 - [2025/5] OpenRLHF 0.8.0 は [Async Pipeline RLHF](./examples/scripts/train_reinforce_baseline_llama_ray_async.sh) (`--async_train`) と [Async Agent RLHF](./examples/scripts/train_reinforce_baseline_llama_ray_agent_async.sh)(`--agent_func_path`) および再設計されたクラスベースのエージェントAPIをサポート
@@ -320,7 +321,7 @@ ray job submit --address="http://127.0.0.1:8265" \
 > [!NOTE]
 > OpenRLHFのRLOOとREINFORCE++-baselineはREINFORCE++に基づく修正版です：
 > - REINFORCE++は、PPOの主要な最適化技術（アドバンテージ正規化やPPO-clipロスなど）を統合し、criticネットワークの必要性を排除します。
-> - REINFORCE++-baselineは、`同じプロンプトから生成された複数のサンプルの平均報酬`をベースラインとして報酬を再形成します（グローバルバッチ正規化 `/std` を使用）。
+> - REINFORCE++-baselineは、`同じプロンプトから生成された複数のサンプルの平均報酬`をベースラインとして使用して報酬を再形成するため、RLVR設定では、アルゴリズムは0（不正解）/ 1（正解）/ -0.5（フォーマット報酬）や-1（不正解）/ 1（正解）/ -0.5（フォーマット報酬）などの報酬パターンに対して敏感ではありません。
 > - OpenRLHFのRLOOは、`トークンごとのKL報酬`を導入し、`PPO-clipロス`を使用することで元のバージョンを修正しています。
 > - Dr. GRPOは、GRPOのグループ正規化 `/std` を削除します。
 
